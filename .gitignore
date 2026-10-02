@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Data files (source DB is provided separately; outputs are generated)
+*.db
+*.db-journal
+output/
+clean_customers.csv
+clean_orders.csv
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
