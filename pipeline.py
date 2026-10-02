@@ -168,7 +168,9 @@ def transform_customers(raw: pd.DataFrame) -> pd.DataFrame:
     df = raw.dropna(subset=["customer_id"]).copy()
     df = deduplicate_customers(df)
     df["full_name"] = build_full_name(df)
-    df["phone"] = df["phone"].map(standardize_phone)
+    # Build as an object column so missing phones stay None (NULL in SQLite).
+    df["phone"] = pd.Series([standardize_phone(v) for v in df["phone"]],
+                            index=df.index, dtype=object)
     df["email"] = clean_email(df["email"])
     df["signup_date"] = parse_dates(df["signup_date"]).dt.strftime("%Y-%m-%d")
 
