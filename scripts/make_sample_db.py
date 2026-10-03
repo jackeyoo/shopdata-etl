@@ -1,15 +1,14 @@
-"""Generate a *synthetic* ``shopdata.db`` for local development.
+"""Generate a larger *synthetic* source database for local load testing.
 
 The real ``shopdata.db`` is supplied by ShopData Inc. and is not committed to this
-repository. This script builds a small stand-in with the same three views and the
+repository. This script builds a larger stand-in with the same schema and the
 kinds of defects described in the brief (duplicates, nulls, negative amounts,
-inconsistent formats) so the pipeline and SQL can be exercised end to end.
+inconsistent formats) so the pipeline and SQL can be load-tested end to end.
 
 Usage:
-    python scripts/make_sample_db.py            # writes ./shopdata.db
-    python scripts/make_sample_db.py out.db     # custom path
+    python scripts/make_sample_db.py sample.db
 
-Never point this at the real database path: it overwrites the target file.
+It overwrites the target file, so it defaults to sample.db, never shopdata.db.
 """
 
 from __future__ import annotations
@@ -61,15 +60,15 @@ def build(path: Path) -> None:
     cur.executescript(
         """
         CREATE TABLE raw_customers (
-            customer_id INTEGER, first_name TEXT, last_name TEXT,
-            email TEXT, phone TEXT, signup_date TEXT, country TEXT
+            customer_id INTEGER, full_name TEXT,
+            email TEXT, phone TEXT, signup_date TEXT
         );
         CREATE TABLE raw_orders (
             order_id INTEGER, customer_id INTEGER, order_date TEXT,
             total_amount REAL, currency TEXT, status TEXT
         );
         CREATE TABLE raw_exchange_rates (
-            rate_date TEXT, currency TEXT, rate_to_usd REAL
+            currency TEXT, rate_to_usd REAL, date TEXT
         );
         """
     )
@@ -90,14 +89,14 @@ def build(path: Path) -> None:
         elif roll < 0.20:
             email = email.upper()
         phone = _fmt_phone(rng, digits) if rng.random() > 0.05 else None
-        customers.append((cid, fn, ln, email, phone, _fmt_date(rng, signup), "US"))
+        customers.append((cid, f"{fn} {ln}", email, phone, _fmt_date(rng, signup)))
         # ~20% of customers have an older, stale duplicate record
         if rng.random() < 0.2:
             older = signup - timedelta(days=rng.randint(30, 300))
-            customers.append((cid, fn, ln, None, _fmt_phone(rng, digits),
-                              older.isoformat(), "US"))
+            customers.append((cid, f"{fn} {ln}", None, _fmt_phone(rng, digits),
+                              older.isoformat()))
     rng.shuffle(customers)
-    cur.executemany("INSERT INTO raw_customers VALUES (?,?,?,?,?,?,?)", customers)
+    cur.executemany("INSERT INTO raw_customers VALUES (?,?,?,?,?)", customers)
 
     # --- exchange rates (one row per currency per day, with gaps) ----------
     rates = []
@@ -106,7 +105,7 @@ def build(path: Path) -> None:
         for ccy, base in BASE_RATES.items():
             if rng.random() < 0.03:  # ~3% of days have no published rate
                 continue
-            rates.append((d.isoformat(), ccy, round(base * rng.uniform(0.97, 1.03), 6)))
+            rates.append((ccy, round(base * rng.uniform(0.97, 1.03), 6), d.isoformat()))
         d += timedelta(days=1)
     cur.executemany("INSERT INTO raw_exchange_rates VALUES (?,?,?)", rates)
 
@@ -132,7 +131,7 @@ def build(path: Path) -> None:
         elif croll < 0.12:
             ccy = "CHF"                # currency with no rate table
         orders.append((oid, cid, _fmt_date(rng, od), amount, ccy,
-                       rng.choice(["completed", "completed", "shipped", "cancelled"])))
+                       rng.choice(["COMPLETED", "COMPLETED", "PENDING", "CANCELLED"])))
     orders += rng.sample(orders, 8)    # exact duplicate rows from a double load
     cur.executemany("INSERT INTO raw_orders VALUES (?,?,?,?,?,?)", orders)
 
@@ -149,4 +148,4 @@ def build(path: Path) -> None:
 
 
 if __name__ == "__main__":
-    build(Path(sys.argv[1]) if len(sys.argv) > 1 else Path("shopdata.db"))
+    build(Path(sys.argv[1]) if len(sys.argv) > 1 else Path("sample.db"))
