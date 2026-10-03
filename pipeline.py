@@ -35,6 +35,7 @@ DEFAULT_FALLBACK_DIR = Path("output")
 
 UNKNOWN_EMAIL = "unknown@domain.com"
 BASE_CURRENCY = "USD"
+MIN_PHONE_DIGITS = 10  # shorter cleaned numbers are logged as suspicious
 
 CUSTOMERS_VIEW = "vw_raw_customers"
 ORDERS_VIEW = "vw_raw_orders"
@@ -303,6 +304,11 @@ def clean_customers(raw: pd.DataFrame) -> pd.DataFrame:
     logger.info("Customers: %d emails defaulted to %s; %d with no phone",
                 int((clean["email"] == UNKNOWN_EMAIL).sum()), UNKNOWN_EMAIL,
                 int(clean["phone"].isna().sum()))
+    short = clean["phone"].dropna().str.len() < MIN_PHONE_DIGITS
+    if short.any():
+        logger.warning("Customers: %d phone numbers have fewer than %d digits after "
+                       "cleaning (e.g. extensions or vanity numbers); review them",
+                       int(short.sum()), MIN_PHONE_DIGITS)
     if clean["signup_date"].isna().any():
         logger.warning("Customers: %d rows have an unparseable signup_date",
                        int(clean["signup_date"].isna().sum()))
@@ -320,6 +326,10 @@ def clean_orders(raw: pd.DataFrame, rates: pd.DataFrame) -> pd.DataFrame:
         raise
     logger.info("Orders: %d raw rows -> %d valid orders (%d duplicate/invalid rows removed)",
                 len(raw), len(clean), len(raw) - len(clean))
+    no_date = int(clean["order_date"].isna().sum())
+    if no_date:
+        logger.warning("Orders: %d orders have no order_date; they are kept but "
+                       "cannot be matched to an exchange rate", no_date)
     missing_fx = clean.loc[clean["fx_rate_missing"], "currency"].value_counts()
     if not missing_fx.empty:
         logger.warning("Orders: %d non-USD orders had no exchange rate and were "
