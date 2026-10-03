@@ -50,6 +50,7 @@ FROM vw_raw_customers;
 SELECT
     SUM(phone IS NULL)                                     AS null_phone,
     SUM(phone GLOB '*[^0-9]*')                             AS phone_with_non_digits,
+    SUM(phone GLOB '*[A-Za-z]*')                           AS phone_with_letters,
     COUNT(DISTINCT LENGTH(phone))                          AS distinct_raw_lengths
 FROM vw_raw_customers;
 
@@ -115,7 +116,7 @@ SELECT
 FROM vw_raw_orders AS o
 LEFT JOIN vw_exchange_rates AS r
        ON UPPER(TRIM(r.currency)) = UPPER(TRIM(o.currency))
-      AND DATE(r.rate_date)       = DATE(REPLACE(o.order_date, '/', '-'))
+      AND DATE(r.date)            = DATE(REPLACE(o.order_date, '/', '-'))
 WHERE o.currency IS NOT NULL
   AND UPPER(TRIM(o.currency)) <> 'USD'
   AND r.rate_to_usd IS NULL
@@ -142,3 +143,30 @@ SELECT
 FROM vw_raw_orders
 GROUP BY date_format
 ORDER BY n DESC;
+
+-- O7. Orders with no order_date (cannot be matched to an exchange rate)
+SELECT order_id, customer_id, total_amount, currency, status
+FROM vw_raw_orders
+WHERE order_date IS NULL OR TRIM(order_date) = '';
+
+-- O8. Order status values (which statuses should count towards CLV?)
+SELECT status, COUNT(*) AS n, SUM(total_amount <= 0) AS non_positive_amounts
+FROM vw_raw_orders
+GROUP BY status
+ORDER BY n DESC;
+
+-- =============================================================================
+-- EXCHANGE RATES
+-- =============================================================================
+
+-- R1. Rate coverage per currency vs. the order date range.
+--     Orders dated after a currency's last rate cannot be converted.
+SELECT
+    r.currency,
+    MIN(r.date)  AS first_rate_date,
+    MAX(r.date)  AS last_rate_date,
+    COUNT(*)     AS rate_rows,
+    (SELECT MAX(order_date) FROM vw_raw_orders) AS last_order_date
+FROM vw_exchange_rates AS r
+GROUP BY r.currency
+ORDER BY r.currency;
